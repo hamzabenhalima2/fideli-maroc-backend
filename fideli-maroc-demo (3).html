@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fideli-Maroc — Démo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --zellige: #1B4B66;
+    --zellige-deep: #0E2F40;
+    --brass: #C9A227;
+    --cream: #FAF6EC;
+    --clay: #A63D40;
+    --ink: #1A1A1A;
+    --line: rgba(27,75,102,0.14);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'Space Grotesk', sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    min-height:100vh;
+  }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    background: var(--cream);
+    position: sticky; top:0; z-index:10;
+  }
+  .brand{
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--zellige-deep);
+  }
+  .brand span{ color: var(--brass); }
+  .tabs{ display:flex; gap:4px; background:#fff; border:1px solid var(--line); border-radius:999px; padding:4px; }
+  .tab-btn{
+    border:none; background:transparent; padding:9px 18px; border-radius:999px;
+    font-family:'Space Grotesk'; font-size:14px; font-weight:600; color: var(--zellige-deep);
+    cursor:pointer; transition: all .25s ease;
+  }
+  .tab-btn.active{ background: var(--zellige); color:#fff; }
+  main{ max-width: 1000px; margin: 0 auto; padding: 40px 24px 80px; }
+  .view{ display:none; animation: fadeIn .4s ease; }
+  .view.active{ display:block; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ---- CLIENT VIEW ---- */
+  .phone-frame{
+    max-width: 380px; margin: 0 auto;
+    background: var(--zellige-deep);
+    border-radius: 40px;
+    padding: 14px;
+    box-shadow: 0 30px 60px -20px rgba(14,47,64,0.4);
+  }
+  .phone-screen{
+    background: #fff;
+    border-radius: 28px;
+    padding: 28px 20px;
+    min-height: 500px;
+  }
+  .entry-form{ text-align:center; padding: 20px 0; }
+  .entry-form h2{ font-family:'Fraunces', serif; font-size: 22px; margin-bottom:6px; color:var(--zellige-deep); }
+  .entry-form p{ font-size: 13px; color:#6b7280; margin-bottom: 22px; }
+  .qr-mock{
+    width: 130px; height:130px; margin: 0 auto 22px;
+    background:
+      repeating-linear-gradient(45deg, var(--zellige-deep) 0 6px, transparent 6px 12px),
+      repeating-linear-gradient(-45deg, var(--zellige-deep) 0 6px, transparent 6px 12px);
+    background-blend-mode: multiply;
+    border-radius: 12px;
+    border: 8px solid var(--zellige-deep);
+    opacity: 0.9;
+  }
+  input[type=tel], input[type=text]{
+    width:100%; padding: 12px 14px; border-radius: 10px; border:1.5px solid var(--line);
+    font-family:'Space Grotesk'; font-size:15px; margin-bottom:12px; outline:none;
+  }
+  input[type=tel]:focus, input[type=text]:focus{ border-color: var(--zellige); }
+  .btn{
+    display:inline-block; border:none; cursor:pointer;
+    font-family:'Space Grotesk'; font-weight:600; font-size:14px;
+    padding: 12px 24px; border-radius: 10px;
+    background: var(--zellige); color:#fff;
+    transition: transform .15s ease, background .2s ease;
+  }
+  .btn:hover{ background: var(--zellige-deep); }
+  .btn:active{ transform: scale(0.97); }
+  .btn.full{ width:100%; }
+  .btn.brass{ background: var(--brass); color: var(--zellige-deep); }
+  .btn.ghost{ background:transparent; border:1.5px solid var(--line); color:var(--zellige-deep); }
+
+  .loyalty-card{
+    background: linear-gradient(135deg, var(--zellige) 0%, var(--zellige-deep) 100%);
+    border-radius: 18px;
+    padding: 22px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .loyalty-card::before{
+    content:''; position:absolute; top:-40px; right:-40px; width:140px; height:140px;
+    background: radial-gradient(circle, rgba(201,162,39,0.35), transparent 70%);
+  }
+  .loyalty-card .shop-name{ font-family:'Fraunces', serif; font-size:19px; font-weight:600; }
+  .loyalty-card .client-name{ font-size:12px; opacity:0.75; margin-top:2px; }
+  .stamps{ display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin: 22px 0 8px; position:relative; z-index:1; }
+  .stamp{
+    aspect-ratio:1; border-radius:50%; border:2px dashed rgba(255,255,255,0.4);
+    display:flex; align-items:center; justify-content:center; font-size:16px;
+    transition: all .35s ease;
+  }
+  .stamp.filled{
+    background: var(--brass); border: 2px solid var(--brass); color: var(--zellige-deep);
+    transform: scale(1.05);
+  }
+  .stamp.new{ animation: pop .5s ease; }
+  @keyframes pop{ 0%{transform:scale(0);} 60%{transform:scale(1.25);} 100%{transform:scale(1.05);} }
+  .card-footer{ display:flex; justify-content:space-between; align-items:center; margin-top:14px; font-size:12px; opacity:0.85; position:relative; z-index:1;}
+  .reward-note{ margin-top:16px; padding:10px 12px; background:#F3EEDF; border-radius:10px; font-size:12.5px; color:var(--zellige-deep); text-align:center; }
+
+  /* ---- MERCHANT VIEW ---- */
+  .grid-2{ display:grid; grid-template-columns: 1.1fr 1.4fr; gap: 24px; }
+  @media (max-width: 760px){ .grid-2{ grid-template-columns: 1fr; } }
+  .panel{ background:#fff; border:1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .panel h3{ font-family:'Fraunces', serif; font-size: 17px; margin-bottom: 14px; color: var(--zellige-deep); }
+  .stat-row{ display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin-bottom:24px; }
+  .stat{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .stat .num{ font-family:'Fraunces', serif; font-size: 26px; color: var(--zellige-deep); }
+  .stat .label{ font-size: 11.5px; color:#8a8a8a; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
+  .client-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 12px 4px; border-bottom: 1px solid var(--line);
+  }
+  .client-row:last-child{ border-bottom:none; }
+  .client-info{ display:flex; align-items:center; gap:12px; }
+  .avatar{
+    width:38px; height:38px; border-radius:50%; background: var(--zellige);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:600; font-family:'Space Grotesk';
+  }
+  .client-info .name{ font-size:14px; font-weight:600; }
+  .client-info .sub{ font-size:11.5px; color:#8a8a8a; }
+  .mini-stamps{ display:flex; gap:3px; }
+  .mini-dot{ width:8px; height:8px; border-radius:50%; border:1.5px solid var(--line); }
+  .mini-dot.filled{ background: var(--brass); border-color: var(--brass); }
+  .add-btn{
+    width:30px; height:30px; border-radius:50%; border:none; background: var(--zellige);
+    color:#fff; font-size:16px; cursor:pointer; line-height:1;
+  }
+  .add-btn:hover{ background: var(--zellige-deep); }
+  .empty{ text-align:center; padding: 30px 10px; color:#9a9a9a; font-size:13px; }
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background: var(--zellige-deep); color:#fff; padding: 12px 20px; border-radius: 10px;
+    font-size:13px; opacity:0; transition: all .35s ease; pointer-events:none; z-index:100;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .setup-note{ font-size:12px; color:#8a8a8a; margin-top:14px; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Fideli<span>·</span>Maroc</div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('client')">Espace Client</button>
+    <button class="tab-btn" onclick="switchTab('merchant')">Espace Commerçant</button>
+    <button class="tab-btn" onclick="switchTab('admin')">+ Nouveau commerce</button>
+  </div>
+</div>
+
+<main>
+
+  <!-- CLIENT VIEW -->
+  <section class="view active" id="view-client">
+    <div class="phone-frame">
+      <div class="phone-screen" id="phoneScreen">
+        <!-- injected by JS -->
+      </div>
+    </div>
+  </section>
+
+  <!-- MERCHANT VIEW -->
+  <section class="view" id="view-merchant">
+    <div class="panel" style="margin-bottom:20px;">
+      <h3>Commerce actif</h3>
+      <select id="shopSelect" onchange="onShopChange()" style="width:100%; padding:12px 14px; border-radius:10px; border:1.5px solid var(--line); font-family:'Space Grotesk'; font-size:15px;"></select>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statClients">0</div><div class="label">Clients fidèles</div></div>
+      <div class="stat"><div class="num" id="statStamps">0</div><div class="label">Points cumulés</div></div>
+      <div class="stat"><div class="num" id="statRewards">0</div><div class="label">Récompenses offertes</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Créditer un point</h3>
+        <input type="tel" id="merchantPhoneInput" placeholder="N° de téléphone du client">
+        <button class="btn full" onclick="creditByPhone()">Scanner / Créditer</button>
+        <p class="setup-note">Simule le scan du QR code client au comptoir. Dans la version réelle, un vrai scanner caméra remplacera ce champ.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Base clients</h3>
+        <div id="clientList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN / NEW SHOP VIEW -->
+  <section class="view" id="view-admin">
+    <div class="panel" style="max-width:480px; margin:0 auto;">
+      <h3>Ajouter un nouveau commerce</h3>
+      <p class="setup-note" style="margin-bottom:16px;">Crée une fiche pour un commerce pilote. Il apparaîtra ensuite dans le sélecteur de l'espace commerçant.</p>
+      <input type="text" id="newShopName" placeholder="Nom du commerce (ex: Café Zellige)">
+      <input type="text" id="newShopGoal" placeholder="Points pour la récompense (ex: 5)" value="5">
+      <button class="btn full brass" onclick="createShop()">Créer le commerce</button>
+      <div id="newShopResult"></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const API_URL = "https://fideli-maroc-backend-production.up.railway.app";
+  const DEFAULT_GOAL = 5;
+
+  let shops = [];
+  let shopId = null;
+  let GOAL = DEFAULT_GOAL;
+  let currentPhone = null;
+
+  function initials(phone){
+    return phone.slice(-2);
+  }
+
+  function currentShop(){
+    return shops.find(s => s.id === shopId);
+  }
+
+  async function api(path, options){
+    const res = await fetch(API_URL + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options
+    });
+    if(!res.ok){
+      const err = await res.json().catch(()=>({error:'Erreur serveur'}));
+      throw new Error(err.error || 'Erreur serveur');
+    }
+    return res.json();
+  }
+
+  async function loadShops(){
+    try{
+      shops = await api('/shops');
+      if(shops.length > 0 && !shopId){
+        shopId = shops[0].id;
+        GOAL = shops[0].points_goal || DEFAULT_GOAL;
+      }
+      populateShopSelect();
+    }catch(e){
+      showToast("Impossible de contacter le serveur");
+    }
+  }
+
+  function populateShopSelect(){
+    const sel = document.getElementById('shopSelect');
+    if(!sel) return;
+    sel.innerHTML = shops.map(s => `<option value="${s.id}" ${s.id===shopId?'selected':''}>${s.name}</option>`).join('');
+  }
+
+  function onShopChange(){
+    const sel = document.getElementById('shopSelect');
+    shopId = parseInt(sel.value, 10);
+    const s = currentShop();
+    GOAL = (s && s.points_goal) || DEFAULT_GOAL;
+    renderMerchant();
+  }
+
+  async function createShop(){
+    const name = document.getElementById('newShopName').value.trim();
+    const goalVal = parseInt(document.getElementById('newShopGoal').value, 10) || DEFAULT_GOAL;
+    if(!name){ showToast("Entrez un nom de commerce"); return; }
+    try{
+      const shop = await api('/shops', { method:'POST', body: JSON.stringify({ name, pointsGoal: goalVal }) });
+      showToast(`Commerce "${shop.name}" créé !`);
+      document.getElementById('newShopName').value = '';
+      document.getElementById('newShopGoal').value = '5';
+      await loadShops();
+      shopId = shop.id;
+      GOAL = shop.points_goal || DEFAULT_GOAL;
+      populateShopSelect();
+      document.getElementById('shopSelect').value = shopId;
+      document.getElementById('newShopResult').innerHTML = `
+        <div class="reward-note" style="margin-top:16px;">
+          ✅ "${shop.name}" est prêt. Bascule sur "Espace Commerçant" pour commencer à créditer des points.
+        </div>`;
+    }catch(e){
+      showToast(e.message);
+    }
+  }
+
+  function switchTab(tab){
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+tab).classList.add('active');
+    event.target.classList.add('active');
+    if(tab==='merchant') renderMerchant();
+  }
+
+  function renderClientEntry(){
+    const screen = document.getElementById('phoneScreen');
+    const shop = currentShop();
+    const name = shop ? shop.name : "Fideli-Maroc";
+    screen.innerHTML = `
+      <div class="entry-form">
+        <div class="qr-mock"></div>
+        <h2>Scannez pour rejoindre</h2>
+        <p>${name} — Carte de fidélité digitale</p>
+        <input type="tel" id="clientPhoneInput" placeholder="Votre n° de téléphone">
+        <button class="btn full brass" onclick="openCard()">Installer ma carte</button>
+      </div>
+    `;
+  }
+
+  async function openCard(){
+    const val = document.getElementById('clientPhoneInput').value.trim();
+    if(!val){ showToast("Entrez un numéro de téléphone"); return; }
+    if(!shopId){ showToast("Serveur indisponible, réessayez"); return; }
+    try{
+      const client = await api('/clients', { method:'POST', body: JSON.stringify({ phone: val, shopId }) });
+      currentPhone = val;
+      renderCard(client);
+    }catch(e){
+      showToast(e.message);
+    }
+  }
+
+  function renderCard(client, justAdded){
+    const screen = document.getElementById('phoneScreen');
+    const shop = currentShop();
+    const name = shop ? shop.name : "Fideli-Maroc";
+    const filled = client.stamps % GOAL;
+    let stampsHtml = '';
+    for(let i=0;i<GOAL;i++){
+      const isFilled = i < filled;
+      const isNew = justAdded && i === filled-1;
+      stampsHtml += `<div class="stamp ${isFilled?'filled':''} ${isNew?'new':''}">${isFilled?'🐾':''}</div>`;
+    }
+    screen.innerHTML = `
+      <div class="loyalty-card">
+        <div class="shop-name">${name}</div>
+        <div class="client-name">${client.name} · ${client.phone}</div>
+        <div class="stamps">${stampsHtml}</div>
+        <div class="card-footer">
+          <span>${filled}/${GOAL} points</span>
+          <span>Total: ${client.stamps}</span>
+        </div>
+      </div>
+      <div class="reward-note">
+        ${filled === 0 && client.stamps>0 ? "🎉 Récompense débloquée à votre prochain achat !" : `Encore ${GOAL - filled} point(s) avant votre cadeau offert.`}
+      </div>
+      <button class="btn full brass" style="margin-top:16px" onclick="addToGoogleWallet('${client.phone}')">📲 Ajouter à Google Wallet</button>
+      <button class="btn ghost full" style="margin-top:10px" onclick="renderClientEntry()">← Changer de numéro</button>
+    `;
+  }
+
+  async function addToGoogleWallet(phone){
+    if(!shopId){ showToast("Serveur indisponible"); return; }
+    try{
+      const { url } = await api(`/clients/${encodeURIComponent(phone)}/wallet-link?shopId=${shopId}`);
+      window.open(url, '_blank');
+    }catch(e){
+      showToast(e.message);
+    }
+  }
+
+  async function creditByPhone(){
+    const val = document.getElementById('merchantPhoneInput').value.trim();
+    if(!val){ showToast("Entrez un numéro de client"); return; }
+    if(!shopId){ showToast("Serveur indisponible, réessayez"); return; }
+    try{
+      // Le client doit exister avant de recevoir un point (simule le scan initial du QR)
+      await api('/clients', { method:'POST', body: JSON.stringify({ phone: val, shopId }) });
+      const updated = await api(`/clients/${encodeURIComponent(val)}/stamp`, { method:'POST', body: JSON.stringify({ shopId }) });
+      document.getElementById('merchantPhoneInput').value = '';
+      showToast("Point ajouté pour "+val);
+      renderMerchant();
+      if(currentPhone === val) renderCard(updated, true);
+    }catch(e){
+      showToast(e.message);
+    }
+  }
+
+  async function renderMerchant(){
+    if(!shopId) return;
+    const list = document.getElementById('clientList');
+    list.innerHTML = `<div class="empty">Chargement…</div>`;
+    let clients;
+    try{
+      clients = await api(`/shops/${shopId}/clients`);
+    }catch(e){
+      list.innerHTML = `<div class="empty">Impossible de charger les clients.</div>`;
+      return;
+    }
+
+    document.getElementById('statClients').textContent = clients.length;
+    document.getElementById('statStamps').textContent = clients.reduce((a,c)=>a+c.stamps,0);
+    document.getElementById('statRewards').textContent = clients.reduce((a,c)=>a+Math.floor(c.stamps/GOAL),0);
+
+    if(clients.length === 0){
+      list.innerHTML = `<div class="empty">Aucun client pour l'instant.<br>Ajoutez un point pour créer une première fiche.</div>`;
+      return;
+    }
+    list.innerHTML = clients
+      .map(c=>{
+        const filled = c.stamps % GOAL;
+        let dots = '';
+        for(let i=0;i<GOAL;i++) dots += `<div class="mini-dot ${i<filled?'filled':''}"></div>`;
+        return `
+          <div class="client-row">
+            <div class="client-info">
+              <div class="avatar">${initials(c.phone)}</div>
+              <div>
+                <div class="name">${c.name}</div>
+                <div class="sub">${c.phone} · ${c.stamps} points cumulés</div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="mini-stamps">${dots}</div>
+              <button class="add-btn" onclick="quickAdd('${c.phone}')">+</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+  }
+
+  async function quickAdd(phone){
+    try{
+      const updated = await api(`/clients/${encodeURIComponent(phone)}/stamp`, { method:'POST', body: JSON.stringify({ shopId }) });
+      showToast("Point ajouté pour "+phone);
+      renderMerchant();
+      if(currentPhone === phone) renderCard(updated, true);
+    }catch(e){
+      showToast(e.message);
+    }
+  }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 2200);
+  }
+
+  loadShops().then(()=>{
+    renderClientEntry();
+    renderMerchant();
+  });
+</script>
+
+</body>
+</html>

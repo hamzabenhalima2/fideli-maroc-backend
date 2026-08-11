@@ -172,8 +172,12 @@ app.get('/shops', async (req, res) => {
   res.json(rows);
 });
 
-// Créer un nouveau commerce
+// Créer un nouveau commerce (protégé par mot de passe admin)
 app.post('/shops', async (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  if (!process.env.ADMIN_SECRET || adminKey !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Accès refusé : mot de passe administrateur incorrect' });
+  }
   const { name, pointsGoal } = req.body;
   if (!name) return res.status(400).json({ error: 'Le nom du commerce est requis' });
   const { rows } = await pool.query(
