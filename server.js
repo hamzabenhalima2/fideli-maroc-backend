@@ -68,6 +68,64 @@ function buildWalletSaveUrl(client) {
   return `https://pay.google.com/gp/v/save/${token}`;
 }
 
+// Récupère un jeton d'accès Google (OAuth2) pour appeler l'API Wallet
+async function getGoogleAccessToken() {
+  if (!serviceAccount) throw new Error('Google Wallet non configuré');
+  const now = Math.floor(Date.now() / 1000);
+  const claims = {
+    iss: serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/wallet_object.issuer',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  };
+  const assertion = jwt.sign(claims, serviceAccount.private_key, { algorithm: 'RS256' });
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || 'Impossible d\'obtenir le jeton Google');
+  return data.access_token;
+}
+
+// Pousse le nouveau solde de points vers la carte déjà installée du client
+async function pushWalletUpdate(client) {
+  if (!serviceAccount || !WALLET_ISSUER_ID) return; // Google Wallet non configuré, on ignore silencieusement
+  const objectId = `${WALLET_ISSUER_ID}.${sanitizeForId(client.phone)}`;
+  try {
+    const accessToken = await getGoogleAccessToken();
+    const res = await fetch(
+      `https://walletobjects.googleapis.com/walletobjects/v1/loyaltyObject/${objectId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          loyaltyPoints: {
+            label: 'Points',
+            balance: { string: String(client.stamps) },
+          },
+        }),
+      }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      // Le client n'a peut-être pas encore installé sa carte -> normal, on ignore
+      console.log('Mise à jour Wallet ignorée (carte pas encore installée ?):', errText);
+    }
+  } catch (e) {
+    console.error('Erreur mise à jour Google Wallet:', e.message);
+  }
+}
+
 // ---- Création automatique des tables au démarrage ----
 async function initDB() {
   await pool.query(`
@@ -161,6 +219,7 @@ app.post('/clients/:phone/stamp', async (req, res) => {
     'UPDATE clients SET stamps = stamps + 1 WHERE phone = $1 AND shop_id = $2 RETURNING *',
     [phone, shopId]
   );
+  pushWalletUpdate(rows[0]); // met à jour la carte Google Wallet en arrière-plan
   res.json(rows[0]);
 });
 
