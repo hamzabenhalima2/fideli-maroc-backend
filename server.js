@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 
 const app = express();
@@ -33,6 +34,10 @@ try {
 
 function sanitizeForId(str) {
   return String(str).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function generateShopCode() {
+  return crypto.randomBytes(4).toString('hex'); // ex: "a1b2c3d4"
 }
 
 function buildWalletSaveUrl(client) {
@@ -133,9 +138,13 @@ async function initDB() {
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       points_goal INTEGER NOT NULL DEFAULT 5,
+      access_code TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
+  // Ajoute la colonne si elle n'existait pas encore sur une base déjà en place
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS access_code TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS clients (
       id SERIAL PRIMARY KEY,
@@ -148,12 +157,18 @@ async function initDB() {
     );
   `);
 
+  // Génère un code d'accès pour les commerces qui n'en ont pas encore (anciennes données)
+  const shopsWithoutCode = await pool.query('SELECT id FROM shops WHERE access_code IS NULL');
+  for (const shop of shopsWithoutCode.rows) {
+    await pool.query('UPDATE shops SET access_code = $1 WHERE id = $2', [generateShopCode(), shop.id]);
+  }
+
   // Crée un commerce de démo si aucun n'existe encore
   const { rows } = await pool.query('SELECT id FROM shops LIMIT 1');
   if (rows.length === 0) {
     await pool.query(
-      'INSERT INTO shops (name, points_goal) VALUES ($1, $2)',
-      ["Animalerie L'empreinte", GOAL]
+      'INSERT INTO shops (name, points_goal, access_code) VALUES ($1, $2, $3)',
+      ["Animalerie L'empreinte", GOAL, generateShopCode()]
     );
     console.log('Commerce de démo "Animalerie L\'empreinte" créé.');
   }
@@ -166,25 +181,38 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Fideli-Maroc backend en ligne' });
 });
 
-// Liste des commerces
+// Liste des commerces (le code d'accès n'est jamais renvoyé ici)
 app.get('/shops', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM shops ORDER BY id');
+  const { rows } = await pool.query('SELECT id, name, points_goal, created_at FROM shops ORDER BY id');
   res.json(rows);
 });
 
 // Créer un nouveau commerce (protégé par mot de passe admin)
+// Le code d'accès généré n'est renvoyé qu'une seule fois, à la création.
 app.post('/shops', async (req, res) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (!process.env.ADMIN_SECRET || adminKey !== process.env.ADMIN_SECRET) {
+  const adminKey = (req.headers['x-admin-key'] || '').trim();
+  const expected = (process.env.ADMIN_SECRET || '').trim();
+  if (!expected || adminKey !== expected) {
     return res.status(403).json({ error: 'Accès refusé : mot de passe administrateur incorrect' });
   }
   const { name, pointsGoal } = req.body;
   if (!name) return res.status(400).json({ error: 'Le nom du commerce est requis' });
+  const accessCode = generateShopCode();
   const { rows } = await pool.query(
-    'INSERT INTO shops (name, points_goal) VALUES ($1, $2) RETURNING *',
-    [name, pointsGoal || GOAL]
+    'INSERT INTO shops (name, points_goal, access_code) VALUES ($1, $2, $3) RETURNING *',
+    [name, pointsGoal || GOAL, accessCode]
   );
-  res.json(rows[0]);
+  res.json(rows[0]); // inclut access_code, à transmettre au commerçant concerné
+});
+
+// Vérifie le code d'accès d'un commerce (utilisé par le dashboard commerçant pour se déverrouiller)
+app.post('/shops/:shopId/verify-code', async (req, res) => {
+  const { shopId } = req.params;
+  const { code } = req.body;
+  const { rows } = await pool.query('SELECT access_code FROM shops WHERE id = $1', [shopId]);
+  if (rows.length === 0) return res.status(404).json({ valid: false });
+  const valid = rows[0].access_code === (code || '').trim();
+  res.json({ valid });
 });
 
 // Un client scanne le QR code -> crée ou récupère sa carte
@@ -205,11 +233,27 @@ app.post('/clients', async (req, res) => {
   res.json(rows[0]);
 });
 
+// Vérifie le code d'accès d'un commerce dans l'en-tête de la requête
+async function requireShopCode(req, res, shopId) {
+  const code = (req.headers['x-shop-code'] || '').trim();
+  const { rows } = await pool.query('SELECT access_code FROM shops WHERE id = $1', [shopId]);
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'Commerce introuvable' });
+    return false;
+  }
+  if (!code || rows[0].access_code !== code) {
+    res.status(403).json({ error: 'Code d\'accès commerçant incorrect' });
+    return false;
+  }
+  return true;
+}
+
 // Le commerçant crédite un point à un client (scan au comptoir)
 app.post('/clients/:phone/stamp', async (req, res) => {
   const { phone } = req.params;
   const { shopId } = req.body;
   if (!shopId) return res.status(400).json({ error: 'shopId requis' });
+  if (!(await requireShopCode(req, res, shopId))) return;
 
   const existing = await pool.query(
     'SELECT * FROM clients WHERE phone = $1 AND shop_id = $2',
@@ -227,9 +271,10 @@ app.post('/clients/:phone/stamp', async (req, res) => {
   res.json(rows[0]);
 });
 
-// Liste des clients d'un commerce (pour le dashboard commerçant)
+// Liste des clients d'un commerce (pour le dashboard commerçant) — protégé par le code du commerce
 app.get('/shops/:shopId/clients', async (req, res) => {
   const { shopId } = req.params;
+  if (!(await requireShopCode(req, res, shopId))) return;
   const { rows } = await pool.query(
     'SELECT * FROM clients WHERE shop_id = $1 ORDER BY stamps DESC',
     [shopId]
