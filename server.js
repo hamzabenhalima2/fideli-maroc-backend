@@ -3,6 +3,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 
 const app = express();
@@ -17,6 +18,55 @@ const pool = new Pool({
 });
 
 const GOAL = 5; // nombre de points pour débloquer une récompense
+
+// ---- Configuration Google Wallet ----
+const WALLET_ISSUER_ID = process.env.GOOGLE_WALLET_ISSUER_ID; // ex: 3388000000023187431
+const WALLET_CLASS_SUFFIX = process.env.GOOGLE_WALLET_CLASS_ID || 'fideli_maroc_v1';
+let serviceAccount = null;
+try {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  }
+} catch (e) {
+  console.error('Impossible de lire GOOGLE_SERVICE_ACCOUNT_JSON:', e.message);
+}
+
+function sanitizeForId(str) {
+  return String(str).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function buildWalletSaveUrl(client) {
+  if (!serviceAccount || !WALLET_ISSUER_ID) {
+    throw new Error('Google Wallet non configuré sur le serveur');
+  }
+  const classId = `${WALLET_ISSUER_ID}.${WALLET_CLASS_SUFFIX}`;
+  const objectId = `${WALLET_ISSUER_ID}.${sanitizeForId(client.phone)}`;
+
+  const loyaltyObject = {
+    id: objectId,
+    classId,
+    state: 'ACTIVE',
+    accountName: client.name,
+    accountId: client.phone,
+    loyaltyPoints: {
+      label: 'Points',
+      balance: { string: String(client.stamps) },
+    },
+  };
+
+  const claims = {
+    iss: serviceAccount.client_email,
+    aud: 'google',
+    typ: 'savetowallet',
+    origins: [],
+    payload: {
+      loyaltyObjects: [loyaltyObject],
+    },
+  };
+
+  const token = jwt.sign(claims, serviceAccount.private_key, { algorithm: 'RS256' });
+  return `https://pay.google.com/gp/v/save/${token}`;
+}
 
 // ---- Création automatique des tables au démarrage ----
 async function initDB() {
@@ -122,6 +172,28 @@ app.get('/shops/:shopId/clients', async (req, res) => {
     [shopId]
   );
   res.json(rows);
+});
+
+// Génère le vrai lien "Ajouter à Google Wallet" pour un client
+app.get('/clients/:phone/wallet-link', async (req, res) => {
+  const { phone } = req.params;
+  const { shopId } = req.query;
+  if (!shopId) return res.status(400).json({ error: 'shopId requis' });
+
+  const existing = await pool.query(
+    'SELECT * FROM clients WHERE phone = $1 AND shop_id = $2',
+    [phone, shopId]
+  );
+  if (existing.rows.length === 0) {
+    return res.status(404).json({ error: 'Client introuvable' });
+  }
+
+  try {
+    const url = buildWalletSaveUrl(existing.rows[0]);
+    res.json({ url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
