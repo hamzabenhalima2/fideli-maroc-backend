@@ -40,6 +40,29 @@ function generateShopCode() {
   return crypto.randomBytes(4).toString('hex'); // ex: "a1b2c3d4"
 }
 
+// Transforme "Pâtisserie Palais de Gâteaux" -> "patisserie-palais-de-gateaux"
+function slugify(str) {
+  return String(str)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // enlève les accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 60);
+}
+
+// Génère un slug unique pour un commerce (ajoute -2, -3... si déjà pris)
+async function generateUniqueSlug(name) {
+  const base = slugify(name) || 'commerce';
+  let slug = base;
+  let i = 2;
+  while (true) {
+    const { rows } = await pool.query('SELECT id FROM shops WHERE slug = $1', [slug]);
+    if (rows.length === 0) return slug;
+    slug = `${base}-${i}`;
+    i++;
+  }
+}
+
 function buildWalletSaveUrl(client) {
   if (!serviceAccount || !WALLET_ISSUER_ID) {
     throw new Error('Google Wallet non configuré sur le serveur');
@@ -142,8 +165,17 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
-  // Ajoute la colonne si elle n'existait pas encore sur une base déjà en place
+  // Ajoute les colonnes si elles n'existaient pas encore sur une base déjà en place
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS access_code TEXT;`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS shops_slug_idx ON shops(slug);`);
+
+  // Génère un slug pour les commerces qui n'en ont pas encore (anciennes données)
+  const shopsWithoutSlug = await pool.query('SELECT id, name FROM shops WHERE slug IS NULL');
+  for (const shop of shopsWithoutSlug.rows) {
+    const slug = await generateUniqueSlug(shop.name);
+    await pool.query('UPDATE shops SET slug = $1 WHERE id = $2', [slug, shop.id]);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS clients (
@@ -163,15 +195,6 @@ async function initDB() {
     await pool.query('UPDATE shops SET access_code = $1 WHERE id = $2', [generateShopCode(), shop.id]);
   }
 
-  // Crée un commerce de démo si aucun n'existe encore
-  const { rows } = await pool.query('SELECT id FROM shops LIMIT 1');
-  if (rows.length === 0) {
-    await pool.query(
-      'INSERT INTO shops (name, points_goal, access_code) VALUES ($1, $2, $3)',
-      ["Animalerie L'empreinte", GOAL, generateShopCode()]
-    );
-    console.log('Commerce de démo "Animalerie L\'empreinte" créé.');
-  }
 }
 
 // ---- Routes ----
@@ -183,8 +206,19 @@ app.get('/health', (req, res) => {
 
 // Liste des commerces (le code d'accès n'est jamais renvoyé ici)
 app.get('/shops', async (req, res) => {
-  const { rows } = await pool.query('SELECT id, name, points_goal, created_at FROM shops ORDER BY id');
+  const { rows } = await pool.query('SELECT id, name, slug, points_goal, created_at FROM shops ORDER BY id');
   res.json(rows);
+});
+
+// Récupère un commerce par son "slug" (utilisé par la page client publique, ex: ?shop=patisserie-palais)
+app.get('/shops/by-slug/:slug', async (req, res) => {
+  const { slug } = req.params;
+  const { rows } = await pool.query(
+    'SELECT id, name, slug, points_goal FROM shops WHERE slug = $1',
+    [slug]
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Commerce introuvable' });
+  res.json(rows[0]);
 });
 
 // Créer un nouveau commerce (protégé par mot de passe admin)
@@ -198,11 +232,12 @@ app.post('/shops', async (req, res) => {
   const { name, pointsGoal } = req.body;
   if (!name) return res.status(400).json({ error: 'Le nom du commerce est requis' });
   const accessCode = generateShopCode();
+  const slug = await generateUniqueSlug(name);
   const { rows } = await pool.query(
-    'INSERT INTO shops (name, points_goal, access_code) VALUES ($1, $2, $3) RETURNING *',
-    [name, pointsGoal || GOAL, accessCode]
+    'INSERT INTO shops (name, points_goal, access_code, slug) VALUES ($1, $2, $3, $4) RETURNING *',
+    [name, pointsGoal || GOAL, accessCode, slug]
   );
-  res.json(rows[0]); // inclut access_code, à transmettre au commerçant concerné
+  res.json(rows[0]); // inclut access_code et slug, à transmettre au commerçant concerné
 });
 
 // Vérifie le code d'accès d'un commerce (utilisé par le dashboard commerçant pour se déverrouiller)
