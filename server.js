@@ -167,6 +167,14 @@ async function initDB() {
   `);
   // Ajoute les colonnes si elles n'existaient pas encore sur une base déjà en place
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS access_code TEXT;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_accounts (
+      phone TEXT PRIMARY KEY,
+      pin TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT;`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS shops_slug_idx ON shops(slug);`);
 
@@ -249,7 +257,31 @@ app.post('/shops/:shopId/verify-code', async (req, res) => {
   const valid = rows[0].access_code === (code || '').trim();
   res.json({ valid });
 });
+// Vérifie si un compte client (avec code PIN) existe déjà pour ce numéro
+app.post('/clients/check-phone', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'phone requis' });
+  const { rows } = await pool.query('SELECT phone FROM client_accounts WHERE phone = $1', [phone]);
+  res.json({ exists: rows.length > 0 });
+});
 
+// Crée le code PIN d'un client (première connexion uniquement)
+app.post('/clients/set-pin', async (req, res) => {
+  const { phone, pin } = req.body;
+  if (!phone || !pin) return res.status(400).json({ error: 'phone et pin requis' });
+  const existing = await pool.query('SELECT phone FROM client_accounts WHERE phone = $1', [phone]);
+  if (existing.rows.length > 0) return res.status(400).json({ error: 'Un code existe déjà pour ce numéro' });
+  await pool.query('INSERT INTO client_accounts (phone, pin) VALUES ($1, $2)', [phone, pin]);
+  res.json({ success: true });
+});
+
+// Vérifie le code PIN d'un client
+app.post('/clients/verify-pin', async (req, res) => {
+  const { phone, pin } = req.body;
+  const { rows } = await pool.query('SELECT pin FROM client_accounts WHERE phone = $1', [phone]);
+  if (rows.length === 0) return res.status(404).json({ valid: false });
+  res.json({ valid: rows[0].pin === (pin || '').trim() });
+});
 // Un client scanne le QR code -> crée ou récupère sa carte
 app.post('/clients', async (req, res) => {
   const { phone, shopId } = req.body;
