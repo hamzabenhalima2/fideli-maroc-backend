@@ -282,6 +282,32 @@ app.post('/clients/verify-pin', async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ valid: false });
   res.json({ valid: rows[0].pin === (pin || '').trim() });
 });
+// Vérifie si un compte client (avec code PIN) existe déjà pour ce numéro
+app.post('/clients/check-phone', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'phone requis' });
+  const { rows } = await pool.query('SELECT phone FROM client_accounts WHERE phone = $1', [phone]);
+  res.json({ exists: rows.length > 0 });
+});
+
+// Crée le code PIN d'un client (première connexion uniquement)
+app.post('/clients/set-pin', async (req, res) => {
+  const { phone, pin } = req.body;
+  if (!phone || !pin) return res.status(400).json({ error: 'phone et pin requis' });
+  const existing = await pool.query('SELECT phone FROM client_accounts WHERE phone = $1', [phone]);
+  if (existing.rows.length > 0) return res.status(400).json({ error: 'Un code existe déjà pour ce numéro' });
+  await pool.query('INSERT INTO client_accounts (phone, pin) VALUES ($1, $2)', [phone, pin]);
+  res.json({ success: true });
+});
+
+// Vérifie le code PIN d'un client
+app.post('/clients/verify-pin', async (req, res) => {
+  const { phone, pin } = req.body;
+  const { rows } = await pool.query('SELECT pin FROM client_accounts WHERE phone = $1', [phone]);
+  if (rows.length === 0) return res.status(404).json({ valid: false });
+  res.json({ valid: rows[0].pin === (pin || '').trim() });
+});
+
 // Un client scanne le QR code -> crée ou récupère sa carte
 app.post('/clients', async (req, res) => {
   const { phone, shopId } = req.body;
